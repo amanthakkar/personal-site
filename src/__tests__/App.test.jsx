@@ -1,118 +1,88 @@
 /**
- * @jest-environment jsdom
+ * App smoke + navigation tests (Vitest).
+ *
+ * Revives the intent of the original Jest suite, which had been fully
+ * commented out (and targeted a previous design: /about and /stats no
+ * longer exist). Renders the app with fetch/scrollTo mocked, then walks
+ * the main nav asserting each route's path and document title.
  */
-
-import '@testing-library/jest-dom';
-import '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import React from 'react';
-import ReactDOM from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
 
-// describe('renders the app', () => {
-//   // mocks the fetch API used on the stats page and the about page.
-//   const jsonMock = jest.fn(() => Promise.resolve({}));
-//   const textMock = jest.fn(() => Promise.resolve(''));
-//   global.fetch = jest.fn(() =>
-//     Promise.resolve({
-//       json: jsonMock,
-//       text: textMock,
-//     })
-//   );
-//   // mocks the scrollTo API used when navigating to a new page.
-//   window.scrollTo = jest.fn();
+describe('renders the app', () => {
+  // mocks the fetch API used by the indicator and content pages.
+  const jsonMock = vi.fn(() => Promise.resolve({}));
+  const textMock = vi.fn(() => Promise.resolve(''));
+  const fetchMock = vi.fn(() =>
+    Promise.resolve({
+      json: jsonMock,
+      text: textMock,
+    }),
+  );
 
-//   let container;
+  beforeEach(async () => {
+    global.fetch = fetchMock;
+    // mocks the scrollTo API used when navigating to a new page.
+    window.scrollTo = vi.fn();
+    await act(async () => {
+      render(<App />);
+    });
+  });
 
-//   beforeEach(async () => {
-//     container = document.createElement('div');
-//     document.body.appendChild(container);
-//     await act(async () => {
-//       await ReactDOM.createRoot(container).render(<App />);
-//     });
-//   });
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
 
-//   afterEach(() => {
-//     document.body.removeChild(container);
-//     container = null;
-//     jest.clearAllMocks();
-//   });
+  it('should render the app', () => {
+    expect(document.body).toBeInTheDocument();
+  });
 
-//   it('should render the app', async () => {
-//     expect(document.body).toBeInTheDocument();
-//   });
+  it('lands on the About home with the site title', () => {
+    expect(window.location.pathname).toBe('/');
+    expect(document.title).toBe('About | Aman Thakkar');
+  });
 
-//   it('should render the title', async () => {
-//     expect(document.title).toBe('Aman Thakkar');
-//   });
+  const routes = [
+    ['/resume', 'Resume |'],
+    ['/projects', 'Projects |'],
+    ['/contact', 'Contact |'],
+    ['/feed', null],
+    ['/blogs', null],
+    ['/power-law-oscillator-indicator', null],
+  ];
 
-//   it('can navigate to /about', async () => {
-//     expect.assertions(7);
-//     const aboutLink = document.querySelector(
-//       '#header > nav > ul > li:nth-child(1) > a'
-//     );
-//     expect(aboutLink).toBeInTheDocument();
-//     await act(async () => {
-//       await aboutLink.click();
-//     });
-//     expect(document.title).toContain('About |');
-//     expect(window.location.pathname).toBe('/about');
-//     expect(window.scrollTo).toHaveBeenNthCalledWith(1, 0, 0);
-//     expect(global.fetch).toHaveBeenCalledTimes(1);
-//     expect(jsonMock).toHaveBeenCalledTimes(0);
-//     expect(textMock).toHaveBeenCalledTimes(1);
-//   });
+  it.each(routes)('can navigate to %s', async (path, titlePart) => {
+    const link = document.querySelector(`a[href="${path}"]`);
+    expect(link).not.toBeNull();
+    await act(async () => {
+      link.click();
+    });
+    expect(window.location.pathname).toBe(path);
+    if (titlePart) {
+      // react-helmet-async applies the new title after render.
+      await vi.waitFor(() => {
+        expect(document.title).toContain(titlePart);
+      });
+    }
+  });
 
-//   it('can navigate to /resume', async () => {
-//     expect.assertions(3);
-//     const contactLink = document.querySelector(
-//       '#header > nav > ul > li:nth-child(2) > a'
-//     );
-//     expect(contactLink).toBeInTheDocument();
-//     await act(async () => {
-//       await contactLink.click();
-//     });
-//     expect(document.title).toContain('Resume |');
-//     expect(window.location.pathname).toBe('/resume');
-//   });
-
-//   it('can navigate to /projects', async () => {
-//     expect.assertions(3);
-//     const contactLink = document.querySelector(
-//       '#header > nav > ul > li:nth-child(3) > a'
-//     );
-//     expect(contactLink).toBeInTheDocument();
-//     await act(async () => {
-//       await contactLink.click();
-//     });
-//     expect(document.title).toContain('Projects |');
-//     expect(window.location.pathname).toBe('/projects');
-//   });
-
-//   it('can navigate to /stats', async () => {
-//     expect.assertions(5);
-//     const contactLink = document.querySelector(
-//       '#header > nav > ul > li:nth-child(4) > a'
-//     );
-//     expect(contactLink).toBeInTheDocument();
-//     await act(async () => {
-//       await contactLink.click();
-//     });
-//     expect(document.title).toContain('Stats |');
-//     expect(window.location.pathname).toBe('/stats');
-//     expect(global.fetch).toHaveBeenCalledTimes(1);
-//     expect(jsonMock).toHaveBeenCalledTimes(1);
-//   });
-
-//   it('can navigate to /contact', async () => {
-//     expect.assertions(3);
-//     const contactLink = document.querySelector(
-//       '#header > nav > ul > li:nth-child(5) > a'
-//     );
-//     expect(contactLink).toBeInTheDocument();
-//     await act(async () => {
-//       await contactLink.click();
-//     });
-//     expect(document.title).toContain('Contact |');
-//     expect(window.location.pathname).toBe('/contact');
-//   });
-// });
+  it('Bitcoin indicator page routes, titles, degrades gracefully', async () => {
+    const link = document.querySelector(
+      'a[href="/power-law-oscillator-indicator"]',
+    );
+    await act(async () => {
+      link.click();
+    });
+    expect(window.location.pathname).toBe('/power-law-oscillator-indicator');
+    await vi.waitFor(() => {
+      expect(document.title).toContain('Bitcoin Indicator |');
+    });
+    // With live indicator data unavailable (mocked), the page must fall
+    // back to its daily PNG snapshot, not a blank screen or crash.
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain('PNG fallback');
+    });
+  });
+});
